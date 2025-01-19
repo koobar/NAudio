@@ -6,6 +6,10 @@ namespace NAudio.Wasapi.CoreAudioApi
 {
     static class NativeMethods
     {
+        public const int AVRT_PRIORITY_CRITICAL = 2;
+        public const int AVRT_PRIORITY_HIGH = 1;
+        public const int AVRT_PRIORITY_LOW = -1;
+        public const int AVRT_PRIORITY_NORMAL = 0;
 
         /// <summary>
         /// Enables Windows Store apps to access preexisting Component Object Model (COM) interfaces in the WASAPI family.
@@ -22,5 +26,17 @@ namespace NAudio.Wasapi.CoreAudioApi
             [In] IntPtr activationParams, // n.b. is actually a pointer to a PropVariant, but we never need to pass anything but null
             [In] IActivateAudioInterfaceCompletionHandler completionHandler,
             out IActivateAudioInterfaceAsyncOperation activationOperation);
+
+        [DllImport("Avrt.dll", CharSet = CharSet.Unicode)]
+        internal static extern IntPtr AvSetMmThreadCharacteristics([MarshalAs(UnmanagedType.LPWStr)] string proAudio, [Out, In] ref int taskIndex);
+
+        [DllImport("Avrt.dll")]
+        internal static extern bool AvRevertMmThreadCharacteristics(IntPtr avrtHandle);
+
+        [DllImport("Avrt.dll")]
+        internal static extern bool AvSetMmThreadPriority(IntPtr avrtHandle, int priority);
+
+        [DllImport("dwmapi.dll")]
+        internal static extern int DwmEnableMMCSS(bool fEnable);
     }
 }

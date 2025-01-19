@@ -5,6 +5,7 @@ using System.Threading;
 using System.Runtime.InteropServices;
 using NAudio.Utils;
 using System.Collections.Generic;
+using NAudio.Wasapi.CoreAudioApi;
 
 // ReSharper disable once CheckNamespace
 namespace NAudio.Wave
@@ -95,11 +96,39 @@ namespace NAudio.Wave
             return enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
         }
 
+        static string GetMmThreadCharacteristicsString(MmThreadCharacteristics characteristics)
+        {
+            switch (characteristics)
+            {
+                case MmThreadCharacteristics.Audio:
+                    return "Audio";
+                case MmThreadCharacteristics.Capture:
+                    return "Capture";
+                case MmThreadCharacteristics.DisplayPostProcess:
+                    return "DisplayPostProcess";
+                case MmThreadCharacteristics.Distribution:
+                    return "Distribution";
+                case MmThreadCharacteristics.Games:
+                    return "Games";
+                case MmThreadCharacteristics.Playback:
+                    return "Playback";
+                case MmThreadCharacteristics.ProAudio:
+                    return "Pro Audio";
+                case MmThreadCharacteristics.WindowManager:
+                    return "Window Manager";
+                default:
+                    return "Audio";
+            }
+        }
+
         private void PlayThread()
         {
             ResamplerDmoStream resamplerDmoStream = null;
             IWaveProvider playbackProvider = sourceProvider;
             Exception exception = null;
+            IntPtr hAvrt = IntPtr.Zero;
+            int taskIndex = 0;
+
             try
             {
                 if (dmoResamplerNeeded)
@@ -122,6 +151,20 @@ namespace NAudio.Wave
                 var waitHandles = new WaitHandle[] { frameEventWaitHandle };
 
                 audioClient.Start();
+
+                // Apply avrt thread options
+                hAvrt = Wasapi.CoreAudioApi.NativeMethods.AvSetMmThreadCharacteristics(GetMmThreadCharacteristicsString(MmThreadCharacteristics), ref taskIndex);
+                if (hAvrt != IntPtr.Zero)
+                {
+                    if (!Wasapi.CoreAudioApi.NativeMethods.AvSetMmThreadPriority(hAvrt, (int)ThreadPriority))
+                    {
+                        Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
+                    }
+                }
+                else
+                {
+                    Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
+                }
 
                 while (playbackState != PlaybackState.Stopped)
                 {
@@ -168,6 +211,13 @@ namespace NAudio.Wave
                     // immediately
                     Thread.Sleep(isUsingEventSync ? latencyMilliseconds : latencyMilliseconds / 2);
                 }
+
+                if (hAvrt != IntPtr.Zero)
+                {
+                    Wasapi.CoreAudioApi.NativeMethods.AvRevertMmThreadCharacteristics(hAvrt);
+                    hAvrt = IntPtr.Zero;
+                }
+
                 audioClient.Stop();
                 // set if we got here by reaching the end
                 playbackState = PlaybackState.Stopped;
@@ -305,6 +355,27 @@ namespace NAudio.Wave
                     break;
             }
             return ((long)pos * OutputWaveFormat.AverageBytesPerSecond) / (long)audioClient.AudioClockClient.Frequency;
+        }
+
+        /// <summary>
+        /// Playback thread priority.
+        /// </summary>
+        public AvrtThreadPriority ThreadPriority { set; get; } = AvrtThreadPriority.Normal;
+
+        /// <summary>
+        /// Playback thrad characteristics.
+        /// </summary>
+        public MmThreadCharacteristics MmThreadCharacteristics { set; get; } = MmThreadCharacteristics.Audio;
+
+        /// <summary>
+        /// Enable MMCSS
+        /// </summary>
+        public static bool EnableMMCSS
+        {
+            set
+            {
+                Wasapi.CoreAudioApi.NativeMethods.DwmEnableMMCSS(value);
+            }
         }
 
         /// <summary>
